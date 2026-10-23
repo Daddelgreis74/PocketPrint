@@ -1,20 +1,16 @@
 package com.example.openthermalprint.update
 
-import android.app.DownloadManager
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
-import android.os.Environment
+import android.util.Log
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -27,15 +23,24 @@ data class UpdateInfo(
 )
 
 object GitHubUpdater {
-    // Standard-Repository auf GitHub
     const val GITHUB_REPO = "Daddelgreis74/PocketPrint"
-    const val CURRENT_VERSION = "1.0.0"
 
-    /**
-     * Prüft die GitHub Releases API nach der neuesten veröffentlichten Version.
-     */
-    suspend fun checkForUpdate(currentVer: String = CURRENT_VERSION): Result<UpdateInfo> = withContext(Dispatchers.IO) {
+    fun getCurrentVersion(context: Context): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0)).versionName ?: "1.0.0"
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
+            }
+        } catch (_: Exception) {
+            "1.0.0"
+        }
+    }
+
+    suspend fun checkForUpdate(context: Context): Result<UpdateInfo> = withContext(Dispatchers.IO) {
         try {
+            val currentVer = getCurrentVersion(context)
             val apiUrl = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
             val url = URL(apiUrl)
             val connection = (url.openConnection() as HttpURLConnection).apply {
@@ -62,18 +67,14 @@ object GitHubUpdater {
                 return@withContext Result.failure(Exception("GitHub API HTTP ${connection.responseCode}"))
             }
 
-            val reader = BufferedReader(InputStreamReader(connection.inputStream))
-            val jsonString = reader.readText()
-            reader.close()
-
+            val jsonString = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(jsonString)
             val tagName = json.optString("tag_name", "").trim().removePrefix("v").removePrefix("V")
             val body = json.optString("body", "Neue Funktionen und Verbesserungen.")
-            
-            // Finde das erste APK-Asset
+
             var apkUrl: String? = null
-            val assets = json.optJSONArray("assets")
-            if (assets != null) {
+            if (json.has("assets")) {
+                val assets = json.getJSONArray("assets")
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
                     val name = asset.optString("name", "")
@@ -101,73 +102,66 @@ object GitHubUpdater {
     }
 
     /**
-     * Lädt die APK über den Android DownloadManager herunter und stößt anschließend die Installation an.
+     * Lädt die APK direkt im Hintergrund in den Cache herunter (wie bei SmartHome Kiosk)
+     * und liefert die fertige Datei zurück.
      */
-    fun downloadAndInstallApk(context: Context, downloadUrl: String, version: String, onProgress: (String) -> Unit) {
+    suspend fun downloadApk(
+        context: Context,
+        downloadUrl: String,
+        onProgress: (Float) -> Unit
+    ): File? = withContext(Dispatchers.IO) {
         try {
-            val fileName = "PocketPrint-v$version.apk"
-            val destinationFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
-            if (destinationFile.exists()) {
-                destinationFile.delete()
+            val url = URL(downloadUrl)
+            val connection = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10000
+                readTimeout = 20000
+                setRequestProperty("User-Agent", "PocketPrint-Android")
+                connect()
             }
 
-            val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
-                setTitle("PocketPrint Update v$version")
-                setDescription("Lade neueste App-Version herunter...")
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationUri(Uri.fromFile(destinationFile))
-                setMimeType("application/vnd.android.package-archive")
-            }
+            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                val fileLength = connection.contentLength
+                val cacheFile = File(context.cacheDir, "pocketprint-update.apk")
+                if (cacheFile.exists()) cacheFile.delete()
 
-            val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-            val downloadId = downloadManager.enqueue(request)
-            onProgress("Download gestartet...")
-
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(recvContext: Context?, intent: Intent?) {
-                    val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                    if (id == downloadId) {
-                        try {
-                            context.unregisterReceiver(this)
-                        } catch (_: Exception) {}
-                        installApk(context, destinationFile)
+                connection.inputStream.use { input ->
+                    FileOutputStream(cacheFile).use { output ->
+                        val data = ByteArray(4096)
+                        var total: Long = 0
+                        var count: Int
+                        while (input.read(data).also { count = it } != -1) {
+                            total += count
+                            if (fileLength > 0) {
+                                onProgress(total.toFloat() / fileLength.toFloat())
+                            }
+                            output.write(data, 0, count)
+                        }
                     }
                 }
-            }
-
-            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-            } else {
-                context.registerReceiver(receiver, filter)
+                return@withContext cacheFile
             }
         } catch (e: Exception) {
-            onProgress("Fehler beim Starten des Downloads: ${e.message}")
+            Log.e("GitHubUpdater", "Fehler beim Herunterladen der APK", e)
         }
+        return@withContext null
     }
 
     /**
-     * Startet den nativen Android Paket-Installer für die heruntergeladene APK via FileProvider.
+     * Startet den nativen Android Paket-Installer für die heruntergeladene Datei (SmartHome Kiosk Methode).
      */
-    fun installApk(context: Context, apkFile: File) {
-        if (!apkFile.exists()) return
-
-        val apkUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apkFile
-        )
-
-        val installIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(apkUri, "application/vnd.android.package-archive")
-            flags = IntentIntentFlags()
+    fun startInstallation(context: Context, apkFile: File) {
+        try {
+            val authority = "${context.packageName}.fileprovider"
+            val uri = FileProvider.getUriForFile(context, authority, apkFile)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e("GitHubUpdater", "Fehler beim Starten der Installation", e)
         }
-
-        context.startActivity(installIntent)
-    }
-
-    private fun IntentIntentFlags(): Int {
-        return Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
     }
 
     private fun isNewerVersion(current: String, candidate: String): Boolean {

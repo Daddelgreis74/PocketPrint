@@ -136,7 +136,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 updateStatus = if (silent) null else "Prüfe GitHub auf Updates..."
             )
 
-            val result = GitHubUpdater.checkForUpdate()
+            val result = GitHubUpdater.checkForUpdate(getApplication())
             result.onSuccess { info ->
                 _uiState.value = _uiState.value.copy(
                     isCheckingUpdate = false,
@@ -165,14 +165,28 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     fun startUpdateDownload() {
         val update = _uiState.value.availableUpdate ?: return
         val url = update.downloadUrl ?: return
-        GitHubUpdater.downloadAndInstallApk(
-            context = getApplication(),
-            downloadUrl = url,
-            version = update.latestVersion
-        ) { status ->
-            _uiState.value = _uiState.value.copy(updateStatus = status)
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                availableUpdate = null,
+                updateStatus = "Lade Update v${update.latestVersion} herunter..."
+            )
+
+            val apkFile = GitHubUpdater.downloadApk(
+                context = getApplication(),
+                downloadUrl = url
+            ) { progress ->
+                val percent = (progress * 100).toInt()
+                _uiState.value = _uiState.value.copy(updateStatus = "Download: $percent%")
+            }
+
+            if (apkFile != null) {
+                _uiState.value = _uiState.value.copy(updateStatus = "Starte Installation...")
+                GitHubUpdater.startInstallation(getApplication(), apkFile)
+            } else {
+                _uiState.value = _uiState.value.copy(updateStatus = "Fehler beim Herunterladen des Updates.")
+            }
         }
-        _uiState.value = _uiState.value.copy(availableUpdate = null)
     }
 
     fun startScan() {

@@ -1576,7 +1576,7 @@ private fun SettingsTabContent(
 
                     Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
                         Text(
-                            "v${com.example.openthermalprint.update.GitHubUpdater.CURRENT_VERSION}",
+                            "v${com.example.openthermalprint.update.GitHubUpdater.getCurrentVersion(context)}",
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                         )
