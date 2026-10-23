@@ -85,10 +85,18 @@ class BluetoothPrinterManager(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun loadBondedDevices() {
-        val bonded = bluetoothAdapter?.bondedDevices?.map {
-            PrinterDevice(it.name ?: "Drucker", it.address, true)
-        } ?: emptyList()
-        _discoveredDevices.value = bonded
+        try {
+            val bonded = bluetoothAdapter?.bondedDevices?.map {
+                val devName = try { it.name ?: "Drucker" } catch (_: SecurityException) { "Drucker" }
+                PrinterDevice(devName, it.address, true)
+            } ?: emptyList()
+            _discoveredDevices.value = bonded
+        } catch (_: SecurityException) {
+            // Wenn Berechtigungen noch nicht erteilt wurden (z.B. beim Erststart)
+            _discoveredDevices.value = emptyList()
+        } catch (_: Exception) {
+            _discoveredDevices.value = emptyList()
+        }
     }
 
     @SuppressLint("MissingPermission")
