@@ -56,7 +56,7 @@ enum class ScreenSection(val title: String) {
     PHOTO("Foto-Druck"),
     TEXT("Freitext & Vorlagen"),
     CODES("QR- & Barcodes"),
-    SETTINGS("Drucker-Setup")
+    SETTINGS("Einstellungen")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -278,7 +278,7 @@ fun MainScreen(
                             contentScale = ContentScale.Crop
                         )
                     },
-                    label = { Text("Drucker") }
+                    label = { Text("Einstellungen") }
                 )
             }
         }
@@ -557,8 +557,8 @@ private fun HomeDashboardContent(
                 onClick = { onNavigate(ScreenSection.CODES) }
             )
             DashboardFeatureCard(
-                title = "Drucker-Setup",
-                subtitle = "Vorschub, Hitze, Theme",
+                title = "Einstellungen",
+                subtitle = "Drucker, Design & Updates",
                 imageRes = R.drawable.cat_printer,
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigate(ScreenSection.SETTINGS) }
@@ -1246,7 +1246,7 @@ private fun BarcodeTabContent(
 }
 
 // -------------------------------------------------------------
-// REITER: EINSTELLUNGEN & HARDWARE
+// REITER: EINSTELLUNGEN (AUFGERÄUMT IN 3 SEKTIONS-KARTEN)
 // -------------------------------------------------------------
 @Composable
 private fun SettingsTabContent(
@@ -1254,83 +1254,218 @@ private fun SettingsTabContent(
     viewModel: PrinterViewModel,
     onRequestScan: () -> Unit
 ) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+    val isConnected = uiState.connectionState is ConnectionState.Connected
+    val isConnecting = uiState.connectionState is ConnectionState.Connecting
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+        // KARTE 1: DRUCKER & HARDWARE
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
         ) {
-            Text("Drucker-Hardware & Papier", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-
-            // Abriss-Vorschub
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text("Papiervorschub nach Druck", style = MaterialTheme.typography.bodyMedium)
-                    Text("${uiState.feedLines} Zeilen (~${(uiState.feedLines * 2.5).toInt()} mm)", fontWeight = FontWeight.SemiBold)
-                }
-                Text(
-                    "Bestimmt, wie weit der Bon nach dem Drucken über die Abreißkante geschoben wird.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-                Slider(
-                    value = uiState.feedLines.toFloat(),
-                    onValueChange = { viewModel.setFeedLines(it.toInt()) },
-                    valueRange = 4f..20f,
-                    steps = 7,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            HorizontalDivider()
-
-            // Thermokopf-Dichte (Density)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Thermokopf-Hitze / Druckdichte:", style = MaterialTheme.typography.bodyMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = uiState.printDensity == 0,
-                        onClick = { viewModel.setDensity(0) },
-                        label = { Text("Hell") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = uiState.printDensity == 1,
-                        onClick = { viewModel.setDensity(1) },
-                        label = { Text("Normal") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = uiState.printDensity == 2,
-                        onClick = { viewModel.setDensity(2) },
-                        label = { Text("Dunkel") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            HorizontalDivider()
-
-            // App Design & Theme
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header mit Status-Badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("App-Design & Farbschema", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text("Drucker & Verbindung", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                     }
+
+                    // Status Pill
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isConnected -> Color(0xFF2E7D32).copy(alpha = 0.15f)
+                            isConnecting -> Color(0xFFFFA000).copy(alpha = 0.15f)
+                            else -> Color(0xFFD32F2F).copy(alpha = 0.15f)
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .background(
+                                        when {
+                                            isConnected -> Color(0xFF2E7D32)
+                                            isConnecting -> Color(0xFFFFA000)
+                                            else -> Color(0xFFD32F2F)
+                                        },
+                                        CircleShape
+                                    )
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = when {
+                                    isConnected -> "Verbunden"
+                                    isConnecting -> "Verbinde..."
+                                    else -> "Getrennt"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    isConnected -> Color(0xFF2E7D32)
+                                    isConnecting -> Color(0xFFFFA000)
+                                    else -> Color(0xFFD32F2F)
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Verbinden / Trennen Button
+                if (isConnected) {
+                    OutlinedButton(
+                        onClick = { viewModel.disconnect() },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.BluetoothDisabled, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Drucker-Verbindung trennen")
+                    }
+                } else {
+                    Button(
+                        onClick = onRequestScan,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.BluetoothSearching, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Bluetooth-Drucker suchen")
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Papiervorschub Slider
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Abreiß-Vorschub", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text("${uiState.feedLines} Zeilen (~${(uiState.feedLines * 2.5).toInt()} mm)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text(
+                        "Schiebt den Bon nach dem Drucken über die Abreißkante.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Slider(
+                        value = uiState.feedLines.toFloat(),
+                        onValueChange = { viewModel.setFeedLines(it.toInt()) },
+                        valueRange = 4f..20f,
+                        steps = 7,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                HorizontalDivider()
+
+                // Druckhitze / Dichte
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Druckdichte / Hitze:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = uiState.printDensity == 0,
+                            onClick = { viewModel.setDensity(0) },
+                            label = { Text("Hell") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = uiState.printDensity == 1,
+                            onClick = { viewModel.setDensity(1) },
+                            label = { Text("Normal") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = uiState.printDensity == 2,
+                            onClick = { viewModel.setDensity(2) },
+                            label = { Text("Dunkel") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                // Schnell-Aktionen: Vorschub & Reset
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = { viewModel.feedPaper(uiState.feedLines) },
+                        modifier = Modifier.weight(1f),
+                        enabled = isConnected
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Vorschub")
+                    }
+
+                    FilledTonalButton(
+                        onClick = { viewModel.initPrinter() },
+                        modifier = Modifier.weight(1f),
+                        enabled = isConnected
+                    ) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reset")
+                    }
+                }
+            }
+        }
+
+        // KARTE 2: DARSTELLUNG & DESIGN-THEMES
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Palette, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text("Design & Farbschema", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    }
+
                     Text(
                         when (uiState.themeMode) {
                             ThemeMode.NORDIC -> "Nordic Paper"
@@ -1340,12 +1475,12 @@ private fun SettingsTabContent(
                             ThemeMode.SYSTEM -> "System"
                         },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
 
-                // Row 1: The two signature premium themes
+                Text("Signature Themes:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1364,7 +1499,7 @@ private fun SettingsTabContent(
                     )
                 }
 
-                // Row 2: Standard modes
+                Text("Standard Modus:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1392,11 +1527,11 @@ private fun SettingsTabContent(
                     )
                 }
 
-                // Mini Color Palette Preview
+                // Mini Farbpalette
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(24.dp)
+                        .height(20.dp)
                         .clip(RoundedCornerShape(6.dp))
                 ) {
                     Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
@@ -1406,97 +1541,76 @@ private fun SettingsTabContent(
                     Box(modifier = Modifier.weight(1f).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant))
                 }
             }
+        }
 
-            HorizontalDivider()
-
-            // Hardware Actions
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+        // KARTE 3: APP-INFO & GITHUB-UPDATER
+        ElevatedCard(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(
-                    onClick = { viewModel.feedPaper(uiState.feedLines) },
-                    modifier = Modifier.weight(1f),
-                    enabled = uiState.connectionState is ConnectionState.Connected
-                ) {
-                    Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Vorschub")
-                }
-
-                OutlinedButton(
-                    onClick = { viewModel.initPrinter() },
-                    modifier = Modifier.weight(1f),
-                    enabled = uiState.connectionState is ConnectionState.Connected
-                ) {
-                    Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Reset")
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (uiState.connectionState is ConnectionState.Connected) {
-                    Button(
-                        onClick = { viewModel.disconnect() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Verbindung trennen")
-                    }
-                } else {
-                    Button(
-                        onClick = onRequestScan,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.BluetoothSearching, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Bluetooth-Drucker suchen")
-                    }
-                }
-            }
-
-            HorizontalDivider()
-
-            // GitHub Update Sektion
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("App-Updates (GitHub)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("PocketPrint", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                            Text("Daddelgreis74/PocketPrint", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
                     }
-                    Text("v${com.example.openthermalprint.update.GitHubUpdater.CURRENT_VERSION}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+
+                    Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
+                        Text(
+                            "v${com.example.openthermalprint.update.GitHubUpdater.CURRENT_VERSION}",
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 if (uiState.updateStatus != null) {
-                    Text(
-                        text = uiState.updateStatus ?: "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = uiState.updateStatus ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
                 }
 
-                OutlinedButton(
+                Button(
                     onClick = { viewModel.checkForUpdates(silent = false) },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !uiState.isCheckingUpdate
                 ) {
                     if (uiState.isCheckingUpdate) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
                     } else {
-                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
                     }
-                    Text(if (uiState.isCheckingUpdate) "Suche nach Release..." else "Nach GitHub-Updates suchen")
+                    Text(if (uiState.isCheckingUpdate) "Prüfe GitHub..." else "Nach App-Updates suchen")
                 }
             }
         }
