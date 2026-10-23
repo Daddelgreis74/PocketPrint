@@ -1254,6 +1254,7 @@ private fun SettingsTabContent(
     viewModel: PrinterViewModel,
     onRequestScan: () -> Unit
 ) {
+    val context = LocalContext.current
     val isConnected = uiState.connectionState is ConnectionState.Connected
     val isConnecting = uiState.connectionState is ConnectionState.Connecting
 

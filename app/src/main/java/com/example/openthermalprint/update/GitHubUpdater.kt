@@ -79,7 +79,7 @@ object GitHubUpdater {
                     val asset = assets.getJSONObject(i)
                     val name = asset.optString("name", "")
                     if (name.endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = asset.optString("browser_download_url", null)
+                        apkUrl = asset.optString("browser_download_url", "").ifBlank { null }
                         break
                     }
                 }
@@ -103,7 +103,7 @@ object GitHubUpdater {
 
     /**
      * Lädt die APK direkt im Hintergrund in den Cache herunter (wie bei SmartHome Kiosk)
-     * und liefert die fertige Datei zurück.
+     * mit Unterstützung für GitHub Redirects (302) und liefert die fertige Datei zurück.
      */
     suspend fun downloadApk(
         context: Context,
@@ -111,22 +111,45 @@ object GitHubUpdater {
         onProgress: (Float) -> Unit
     ): File? = withContext(Dispatchers.IO) {
         try {
-            val url = URL(downloadUrl)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 10000
-                readTimeout = 20000
-                setRequestProperty("User-Agent", "PocketPrint-Android")
-                connect()
+            var currentUrl = downloadUrl
+            var connection: HttpURLConnection? = null
+            var redirectCount = 0
+
+            while (redirectCount < 5) {
+                val url = URL(currentUrl)
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "PocketPrint-Android")
+                }
+
+                val code = connection.responseCode
+                if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+                    code == HttpURLConnection.HTTP_MOVED_TEMP ||
+                    code == HttpURLConnection.HTTP_SEE_OTHER ||
+                    code == 307 || code == 308
+                ) {
+                    val newLocation = connection.getHeaderField("Location")
+                    if (!newLocation.isNullOrBlank()) {
+                        currentUrl = newLocation
+                        redirectCount++
+                        connection.disconnect()
+                        continue
+                    }
+                }
+                break
             }
 
-            if (connection.responseCode == HttpURLConnection.HTTP_OK) {
-                val fileLength = connection.contentLength
+            val finalConn = connection ?: return@withContext null
+            if (finalConn.responseCode == HttpURLConnection.HTTP_OK) {
+                val fileLength = finalConn.contentLength
                 val cacheFile = File(context.cacheDir, "pocketprint-update.apk")
                 if (cacheFile.exists()) cacheFile.delete()
 
-                connection.inputStream.use { input ->
+                finalConn.inputStream.use { input ->
                     FileOutputStream(cacheFile).use { output ->
-                        val data = ByteArray(4096)
+                        val data = ByteArray(8192)
                         var total: Long = 0
                         var count: Int
                         while (input.read(data).also { count = it } != -1) {
