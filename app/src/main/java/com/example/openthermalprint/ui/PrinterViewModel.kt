@@ -1,6 +1,7 @@
 package com.example.openthermalprint.ui
 
 import android.app.Application
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,9 +84,83 @@ data class UiState(
 
 class PrinterViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        private const val PREFS_NAME = "pocketprint_prefs"
+        private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_PRINT_DENSITY = "print_density"
+        private const val KEY_FEED_LINES = "feed_lines"
+        private const val KEY_DITHER_MODE = "dither_mode"
+        private const val KEY_SHOPPING_ITEMS = "shopping_items"
+    }
+
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun loadSavedThemeMode(): ThemeMode {
+        val saved = prefs.getString(KEY_THEME_MODE, null) ?: return ThemeMode.SYSTEM
+        return try {
+            ThemeMode.valueOf(saved)
+        } catch (_: Exception) {
+            ThemeMode.SYSTEM
+        }
+    }
+
+    private fun loadSavedDitherMode(): DitherMode {
+        val saved = prefs.getString(KEY_DITHER_MODE, null) ?: return DitherMode.FLOYD_STEINBERG
+        return try {
+            DitherMode.valueOf(saved)
+        } catch (_: Exception) {
+            DitherMode.FLOYD_STEINBERG
+        }
+    }
+
+    private fun loadShoppingItems(): List<ShoppingItem> {
+        val raw = prefs.getString(KEY_SHOPPING_ITEMS, null) ?: return emptyList()
+        return try {
+            val array = JSONArray(raw)
+            val list = mutableListOf<ShoppingItem>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    ShoppingItem(
+                        id = obj.optString("id", UUID.randomUUID().toString()),
+                        text = obj.optString("text", ""),
+                        isChecked = obj.optBoolean("isChecked", false)
+                    )
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveShoppingItems(items: List<ShoppingItem>) {
+        try {
+            val array = JSONArray()
+            items.forEach { item ->
+                val obj = JSONObject().apply {
+                    put("id", item.id)
+                    put("text", item.text)
+                    put("isChecked", item.isChecked)
+                }
+                array.put(obj)
+            }
+            prefs.edit().putString(KEY_SHOPPING_ITEMS, array.toString()).apply()
+        } catch (_: Exception) {
+        }
+    }
+
     private val printerManager = BluetoothPrinterManager(application)
 
-    private val _uiState = MutableStateFlow(UiState())
+    private val _uiState = MutableStateFlow(
+        UiState(
+            themeMode = loadSavedThemeMode(),
+            printDensity = prefs.getInt(KEY_PRINT_DENSITY, 1),
+            feedLines = prefs.getInt(KEY_FEED_LINES, 8),
+            ditherMode = loadSavedDitherMode(),
+            shoppingItems = loadShoppingItems()
+        )
+    )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     init {
@@ -211,6 +288,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun setThemeMode(mode: ThemeMode) {
         _uiState.value = _uiState.value.copy(themeMode = mode)
+        prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
     }
 
     // --- Einkaufsliste Handlers ---
@@ -223,6 +301,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         if (trimmed.isNotBlank()) {
             val updated = _uiState.value.shoppingItems + ShoppingItem(text = trimmed)
             _uiState.value = _uiState.value.copy(shoppingItems = updated, newShoppingItemText = "")
+            saveShoppingItems(updated)
         }
     }
 
@@ -241,15 +320,18 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
         if (items.isNotEmpty()) {
             val newItems = items.map { ShoppingItem(text = it.replaceFirstChar { char -> char.uppercase() }) }
+            val updated = _uiState.value.shoppingItems + newItems
             _uiState.value = _uiState.value.copy(
-                shoppingItems = _uiState.value.shoppingItems + newItems,
+                shoppingItems = updated,
                 statusMessage = "${items.size} Artikel per Sprache hinzugefügt"
             )
+            saveShoppingItems(updated)
         }
     }
 
     fun clearShoppingList() {
         _uiState.value = _uiState.value.copy(shoppingItems = emptyList())
+        saveShoppingItems(emptyList())
     }
 
     fun toggleShoppingItem(id: String) {
@@ -257,16 +339,19 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
             if (it.id == id) it.copy(isChecked = !it.isChecked) else it
         }
         _uiState.value = _uiState.value.copy(shoppingItems = updated)
+        saveShoppingItems(updated)
     }
 
     fun removeShoppingItem(id: String) {
         val updated = _uiState.value.shoppingItems.filter { it.id != id }
         _uiState.value = _uiState.value.copy(shoppingItems = updated)
+        saveShoppingItems(updated)
     }
 
     fun clearCheckedShoppingItems() {
         val updated = _uiState.value.shoppingItems.filter { !it.isChecked }
         _uiState.value = _uiState.value.copy(shoppingItems = updated)
+        saveShoppingItems(updated)
     }
 
     fun printShoppingList() {
@@ -368,6 +453,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     // --- Image & Processing Handlers ---
     fun setDitherMode(mode: DitherMode) {
         _uiState.value = _uiState.value.copy(ditherMode = mode)
+        prefs.edit().putString(KEY_DITHER_MODE, mode.name).apply()
     }
 
     fun setBrightness(brightness: Float) {
@@ -380,6 +466,7 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun setDensity(density: Int) {
         _uiState.value = _uiState.value.copy(printDensity = density)
+        prefs.edit().putInt(KEY_PRINT_DENSITY, density).apply()
         viewModelScope.launch {
             if (_uiState.value.connectionState is ConnectionState.Connected) {
                 printerManager.sendBytes(EscPosEncoder.setDensity(density))
@@ -388,7 +475,9 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setFeedLines(lines: Int) {
-        _uiState.value = _uiState.value.copy(feedLines = lines.coerceIn(2, 25))
+        val safeLines = lines.coerceIn(2, 25)
+        _uiState.value = _uiState.value.copy(feedLines = safeLines)
+        prefs.edit().putInt(KEY_FEED_LINES, safeLines).apply()
     }
 
     // --- Barcode / QR Handlers ---
