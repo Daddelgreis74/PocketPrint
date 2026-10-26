@@ -51,13 +51,15 @@ import com.example.openthermalprint.protocol.EscPosEncoder
 import com.example.openthermalprint.ui.PrinterViewModel
 import com.example.openthermalprint.ui.ThemeMode
 import com.example.openthermalprint.ui.photo.*
+import com.example.openthermalprint.ui.templates.*
 
 enum class ScreenSection(val title: String) {
     HOME("Übersicht"),
     SHOPPING("Einkaufsliste"),
     NOTE("Notiz & Memo"),
     PHOTO("Foto-Druck"),
-    TEXT("Freitext & Vorlagen"),
+    TEMPLATES("Vorlagen & Etiketten"),
+    TEXT("Freitext"),
     CODES("QR- & Barcodes"),
     SETTINGS("Einstellungen")
 }
@@ -355,16 +357,24 @@ fun MainScreen(
                         onSelectImage = { imagePickerLauncher.launch("image/*") }
                     )
 
+                    // VORLAGEN & ETIKETTEN
+                    ScreenSection.TEMPLATES -> TemplatesTabContent(
+                        uiState = uiState,
+                        viewModel = viewModel
+                    )
+
                     // TEXT & VORLAGEN
                     ScreenSection.TEXT -> TextTabContent(
                         uiState = uiState,
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onNavigateToTemplates = { currentSection = ScreenSection.TEMPLATES }
                     )
 
                     // QR- & BARCODES
                     ScreenSection.CODES -> BarcodeTabContent(
                         uiState = uiState,
-                        viewModel = viewModel
+                        viewModel = viewModel,
+                        onNavigateToTemplates = { currentSection = ScreenSection.TEMPLATES }
                     )
 
                     // GERÄTE- & DRUCKER-EINSTELLUNGEN
@@ -533,18 +543,18 @@ private fun HomeDashboardContent(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             DashboardFeatureCard(
-                title = "Foto & Grafik",
-                subtitle = "Mit Dithering-Raster",
+                title = "Foto-Studio",
+                subtitle = "Zuschnitt, Rahmen & Deko",
                 imageRes = R.drawable.cat_photo,
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigate(ScreenSection.PHOTO) }
             )
             DashboardFeatureCard(
-                title = "Freitext",
-                subtitle = "Layout & Vorlagen",
+                title = "Vorlagen & Etiketten",
+                subtitle = "Gewürze, WLAN, To-Do",
                 imageRes = R.drawable.cat_text,
                 modifier = Modifier.weight(1f),
-                onClick = { onNavigate(ScreenSection.TEXT) }
+                onClick = { onNavigate(ScreenSection.TEMPLATES) }
             )
         }
 
@@ -554,18 +564,54 @@ private fun HomeDashboardContent(
         ) {
             DashboardFeatureCard(
                 title = "QR & Barcodes",
-                subtitle = "Links, WLAN & EAN",
+                subtitle = "Links, EAN & Codes",
                 imageRes = R.drawable.cat_codes,
                 modifier = Modifier.weight(1f),
                 onClick = { onNavigate(ScreenSection.CODES) }
             )
             DashboardFeatureCard(
-                title = "Einstellungen",
-                subtitle = "Drucker, Design & Updates",
-                imageRes = R.drawable.cat_printer,
+                title = "Freitext",
+                subtitle = "Eigener Text & Layout",
+                imageRes = R.drawable.cat_note,
                 modifier = Modifier.weight(1f),
-                onClick = { onNavigate(ScreenSection.SETTINGS) }
+                onClick = { onNavigate(ScreenSection.TEXT) }
             )
+        }
+
+        // Einstellungen Vollbreite-Karte
+        ElevatedCard(
+            onClick = { onNavigate(ScreenSection.SETTINGS) },
+            modifier = Modifier.fillMaxWidth().height(88.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.elevatedCardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.cat_printer),
+                        contentDescription = null,
+                        modifier = Modifier.size(46.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Einstellungen", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text("Drucker, Design, Vorschub & Updates", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+            }
         }
     }
 }
@@ -1294,12 +1340,13 @@ private fun ImageTabContent(
 }
 
 // -------------------------------------------------------------
-// REITER: TEXT & VORLAGEN
+// REITER: TEXT & FREITEXT
 // -------------------------------------------------------------
 @Composable
 private fun TextTabContent(
     uiState: com.example.openthermalprint.ui.UiState,
-    viewModel: PrinterViewModel
+    viewModel: PrinterViewModel,
+    onNavigateToTemplates: () -> Unit = {}
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1309,6 +1356,27 @@ private fun TextTabContent(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Surface(
+                onClick = onNavigateToTemplates,
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Style, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Neu: Fertige Vorlagen für Gewürze, WLAN & Planer!",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
             OutlinedTextField(
                 value = uiState.textToPrint,
                 onValueChange = { viewModel.setTextToPrint(it) },
@@ -1321,7 +1389,7 @@ private fun TextTabContent(
             )
 
             // Schnellvorlagen / Templates Toolbar
-            Text("Vorlagen & Einfügen:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text("Schnelleinfügungen:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1417,7 +1485,8 @@ private fun TextTabContent(
 @Composable
 private fun BarcodeTabContent(
     uiState: com.example.openthermalprint.ui.UiState,
-    viewModel: PrinterViewModel
+    viewModel: PrinterViewModel,
+    onNavigateToTemplates: () -> Unit = {}
 ) {
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1427,6 +1496,26 @@ private fun BarcodeTabContent(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            Surface(
+                onClick = onNavigateToTemplates,
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Wifi, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Tipp: Für WLAN-Gastkarten mit Design & Passwort nutze Vorlagen!",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)

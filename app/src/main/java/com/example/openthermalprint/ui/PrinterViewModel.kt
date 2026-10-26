@@ -795,6 +795,33 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun printCustomBitmap(bitmap: Bitmap, label: String = "Vorlage") {
+        viewModelScope.launch(Dispatchers.Default) {
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    isPrinting = true,
+                    statusMessage = "$label wird gedruckt..."
+                )
+            }
+
+            val bytes = EscPosEncoder.bitmapToEscPosRaster(
+                source = bitmap,
+                targetWidth = 384,
+                ditherMode = DitherMode.THRESHOLD,
+                feedLines = _uiState.value.feedLines
+            )
+
+            val res = printerManager.sendBytes(bytes)
+
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    isPrinting = false,
+                    statusMessage = if (res.isSuccess) "$label erfolgreich gedruckt!" else "Druckfehler: ${res.exceptionOrNull()?.message}"
+                )
+            }
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         printerManager.stopScan()
