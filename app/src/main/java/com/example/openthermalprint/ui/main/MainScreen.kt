@@ -12,8 +12,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +50,7 @@ import com.example.openthermalprint.protocol.DitherMode
 import com.example.openthermalprint.protocol.EscPosEncoder
 import com.example.openthermalprint.ui.PrinterViewModel
 import com.example.openthermalprint.ui.ThemeMode
+import com.example.openthermalprint.ui.photo.*
 
 enum class ScreenSection(val title: String) {
     HOME("Übersicht"),
@@ -891,14 +894,18 @@ private fun ImageTabContent(
     viewModel: PrinterViewModel,
     onSelectImage: () -> Unit
 ) {
+    var selectedEditorTab by remember { mutableIntStateOf(0) }
+    val editorTabs = listOf("✂️ Schnitt", "🖼️ Rahmen", "✍️ Text", "🎛️ Raster")
+
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(18.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Header: Bild auswählen / entfernen
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -910,7 +917,7 @@ private fun ImageTabContent(
                 ) {
                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (uiState.selectedBitmap == null) "Bild auswählen" else "Anderes Bild")
+                    Text(if (uiState.selectedBitmap == null) "Bild auswählen" else "Neues Bild")
                 }
 
                 if (uiState.selectedBitmap != null) {
@@ -922,111 +929,364 @@ private fun ImageTabContent(
                 }
             }
 
-            // Preview Box
             uiState.selectedBitmap?.let { bmp ->
+                // Preview Container mit Live Druck-Vorschau Switch
+                val displayBitmap = if (uiState.isPrintPreviewEnabled) {
+                    uiState.ditherPreviewBitmap ?: bmp
+                } else {
+                    bmp
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(240.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                        .height(260.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
                         .background(Color.White),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        bitmap = bmp.asImageBitmap(),
+                        bitmap = displayBitmap.asImageBitmap(),
                         contentDescription = "Vorschau",
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp),
                         contentScale = ContentScale.Fit
                     )
+
+                    // Overlay Pill für Druck-Vorschau Toggle
+                    Surface(
+                        onClick = { viewModel.togglePrintPreview() },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (uiState.isPrintPreviewEnabled) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (uiState.isPrintPreviewEnabled) Icons.Default.Print else Icons.Default.Palette,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (uiState.isPrintPreviewEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = if (uiState.isPrintPreviewEnabled) "Druck-Vorschau" else "Farbe",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (uiState.isPrintPreviewEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
-                // Dither Mode Selector Chips
-                Text("Raster-Verfahren (Dithering):", style = MaterialTheme.typography.labelMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Editor Navigation Tabs
+                TabRow(
+                    selectedTabIndex = selectedEditorTab,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp))
                 ) {
-                    FilterChip(
-                        selected = uiState.ditherMode == DitherMode.FLOYD_STEINBERG,
-                        onClick = { viewModel.setDitherMode(DitherMode.FLOYD_STEINBERG) },
-                        label = { Text("Foto") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = uiState.ditherMode == DitherMode.BAYER_ORDERED,
-                        onClick = { viewModel.setDitherMode(DitherMode.BAYER_ORDERED) },
-                        label = { Text("Bayer (Retro)") },
-                        modifier = Modifier.weight(1.3f)
-                    )
-                    FilterChip(
-                        selected = uiState.ditherMode == DitherMode.THRESHOLD,
-                        onClick = { viewModel.setDitherMode(DitherMode.THRESHOLD) },
-                        label = { Text("Strich") },
-                        modifier = Modifier.weight(1f)
-                    )
+                    editorTabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedEditorTab == index,
+                            onClick = { selectedEditorTab = index },
+                            text = { Text(title, style = MaterialTheme.typography.labelMedium) }
+                        )
+                    }
                 }
 
-                // Brightness & Contrast controls
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Helligkeit", style = MaterialTheme.typography.bodySmall)
-                        Text("${uiState.brightness.toInt()}", style = MaterialTheme.typography.labelSmall)
-                    }
-                    Slider(
-                        value = uiState.brightness,
-                        onValueChange = { viewModel.setBrightness(it) },
-                        valueRange = -80f..80f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                // Tab Content
+                when (selectedEditorTab) {
+                    0 -> { // Zuschnitt & Drehung
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { viewModel.rotateImageClockwise() },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("90° Drehen")
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.toggleImageFlipHorizontal() },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Flip, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Spiegeln")
+                                }
+                            }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("Kontrast", style = MaterialTheme.typography.bodySmall)
-                        Text(String.format(java.util.Locale.US, "%.1fx", uiState.contrast), style = MaterialTheme.typography.labelSmall)
+                            Text("Seitenverhältnis (Zuschnitt):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CropAspect.entries.forEach { aspect ->
+                                    FilterChip(
+                                        selected = uiState.cropAspect == aspect,
+                                        onClick = { viewModel.setCropAspect(aspect) },
+                                        label = { Text(aspect.label) }
+                                    )
+                                }
+                            }
+                        }
                     }
-                    Slider(
-                        value = uiState.contrast,
-                        onValueChange = { viewModel.setContrast(it) },
-                        valueRange = 0.5f..2.0f,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    1 -> { // Rahmen
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Foto-Rahmen wählen:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                PhotoFrame.entries.forEach { frame ->
+                                    FilterChip(
+                                        selected = uiState.photoFrame == frame,
+                                        onClick = { viewModel.setPhotoFrame(frame) },
+                                        label = { Text(frame.label) }
+                                    )
+                                }
+                            }
+
+                            if (uiState.photoFrame == PhotoFrame.POLAROID) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        "Tipp: Unter 'Text' kannst du eine Notiz im Polaroid-Fuß platzieren!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(10.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    2 -> { // Text & Deko
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            OutlinedTextField(
+                                value = uiState.photoCaption,
+                                onValueChange = { viewModel.setPhotoCaption(it) },
+                                label = { Text("Beschriftung auf Foto") },
+                                placeholder = { Text("Z.B. Urlaub 2026, Für Mama...") },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        val now = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.GERMANY).format(java.util.Date())
+                                        viewModel.setPhotoCaption(now)
+                                    }) {
+                                        Icon(Icons.Default.Schedule, contentDescription = "Datum")
+                                    }
+                                }
+                            )
+
+                            // Position der Beschriftung
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CaptionPosition.entries.forEach { pos ->
+                                    if (pos != CaptionPosition.FOOTER || uiState.photoFrame == PhotoFrame.POLAROID) {
+                                        FilterChip(
+                                            selected = uiState.captionPosition == pos,
+                                            onClick = { viewModel.setCaptionPosition(pos) },
+                                            label = { Text(pos.label) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                            // Sticker / Emojis
+                            Text("Deko-Stempel / Emoji:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            val stickers = listOf("❤️", "⭐", "🐱", "🐶", "☕", "🌸", "🎉", "🎁", "📌", "☀️", "🔥", "👍")
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                AssistChip(
+                                    onClick = { viewModel.setSticker("", StickerPosition.NONE) },
+                                    label = { Text("Kein") }
+                                )
+                                stickers.forEach { emoji ->
+                                    FilterChip(
+                                        selected = uiState.stickerEmoji == emoji,
+                                        onClick = {
+                                            if (uiState.stickerEmoji == emoji) {
+                                                viewModel.setSticker("", StickerPosition.NONE)
+                                            } else {
+                                                val pos = if (uiState.stickerPosition == StickerPosition.NONE) StickerPosition.BOTTOM_RIGHT else uiState.stickerPosition
+                                                viewModel.setSticker(emoji, pos)
+                                            }
+                                        },
+                                        label = { Text(emoji) }
+                                    )
+                                }
+                            }
+
+                            if (uiState.stickerEmoji.isNotBlank()) {
+                                Text("Sticker-Position:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    StickerPosition.entries.filter { it != StickerPosition.NONE }.forEach { pos ->
+                                        FilterChip(
+                                            selected = uiState.stickerPosition == pos,
+                                            onClick = { viewModel.setSticker(uiState.stickerEmoji, pos) },
+                                            label = { Text(pos.label) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    3 -> { // Raster & Helligkeit
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Raster-Verfahren (Dithering):", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = uiState.ditherMode == DitherMode.FLOYD_STEINBERG,
+                                    onClick = { viewModel.setDitherMode(DitherMode.FLOYD_STEINBERG) },
+                                    label = { Text("Foto") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = uiState.ditherMode == DitherMode.BAYER_ORDERED,
+                                    onClick = { viewModel.setDitherMode(DitherMode.BAYER_ORDERED) },
+                                    label = { Text("Retro") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FilterChip(
+                                    selected = uiState.ditherMode == DitherMode.THRESHOLD,
+                                    onClick = { viewModel.setDitherMode(DitherMode.THRESHOLD) },
+                                    label = { Text("Strich") },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
+                            // Invertieren Switch
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.InvertColors, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Farben invertieren (Negativ)", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Switch(
+                                    checked = uiState.isPhotoInverted,
+                                    onCheckedChange = { viewModel.togglePhotoInverted() }
+                                )
+                            }
+
+                            // Sliders
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Helligkeit", style = MaterialTheme.typography.bodySmall)
+                                    Text("${uiState.brightness.toInt()}", style = MaterialTheme.typography.labelSmall)
+                                }
+                                Slider(
+                                    value = uiState.brightness,
+                                    onValueChange = { viewModel.setBrightness(it) },
+                                    valueRange = -80f..80f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Kontrast", style = MaterialTheme.typography.bodySmall)
+                                    Text(String.format(java.util.Locale.US, "%.1fx", uiState.contrast), style = MaterialTheme.typography.labelSmall)
+                                }
+                                Slider(
+                                    value = uiState.contrast,
+                                    onValueChange = { viewModel.setContrast(it) },
+                                    valueRange = 0.5f..2.0f,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+                    }
                 }
 
+                Spacer(Modifier.height(4.dp))
+
+                // Drucken Button
                 Button(
                     onClick = { viewModel.printCurrentImage() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
                     enabled = uiState.connectionState is ConnectionState.Connected && !uiState.isPrinting
                 ) {
                     if (uiState.isPrinting) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         Spacer(Modifier.width(8.dp))
+                        Text("Drucke Foto...")
                     } else {
                         Icon(Icons.Default.Print, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
+                        Text("Foto jetzt drucken")
                     }
-                    Text("Foto jetzt drucken")
                 }
             } ?: Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(180.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Photo, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
+                    Icon(
+                        Icons.Default.Photo,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.size(48.dp)
+                    )
                     Spacer(Modifier.height(8.dp))
-                    Text("Wähle ein Bild aus der Galerie", color = MaterialTheme.colorScheme.outline)
+                    Text(
+                        "Wähle ein Bild aus deiner Galerie",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
         }

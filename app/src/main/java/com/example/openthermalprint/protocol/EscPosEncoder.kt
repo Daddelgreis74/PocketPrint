@@ -189,7 +189,8 @@ object EscPosEncoder {
         ditherMode: DitherMode = DitherMode.FLOYD_STEINBERG,
         brightness: Float = 0f,
         contrast: Float = 1.0f,
-        feedLines: Int = 8
+        feedLines: Int = 8,
+        invert: Boolean = false
     ): ByteArray {
         // Apply brightness / contrast if modified
         val preAdjusted = adjustBrightnessAndContrast(source, brightness, contrast)
@@ -277,7 +278,8 @@ object EscPosEncoder {
                 var rowByte = 0
                 for (bit in 0..7) {
                     val px = startX + bit
-                    if (blackMatrix[px][y]) {
+                    val isBlack = if (invert) !blackMatrix[px][y] else blackMatrix[px][y]
+                    if (isBlack) {
                         rowByte = rowByte or (1 shl (7 - bit))
                     }
                 }

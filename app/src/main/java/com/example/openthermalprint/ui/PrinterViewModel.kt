@@ -15,6 +15,7 @@ import com.example.openthermalprint.bluetooth.PrinterDevice
 import com.example.openthermalprint.protocol.BarcodeGenerator
 import com.example.openthermalprint.protocol.DitherMode
 import com.example.openthermalprint.protocol.EscPosEncoder
+import com.example.openthermalprint.ui.photo.*
 import com.example.openthermalprint.update.GitHubUpdater
 import com.example.openthermalprint.update.UpdateInfo
 import kotlinx.coroutines.Dispatchers
@@ -59,9 +60,21 @@ data class UiState(
     val noteTitle: String = "",
     val noteContent: String = "",
     val noteCategory: String = "📌 Notiz",
-    // Image printing
+    // Image editing & printing
     val selectedImageUri: Uri? = null,
+    val rawImageBitmap: Bitmap? = null,
     val selectedBitmap: Bitmap? = null,
+    val imageRotation: Int = 0,
+    val isImageFlippedHorizontal: Boolean = false,
+    val cropAspect: CropAspect = CropAspect.ORIGINAL,
+    val photoFrame: PhotoFrame = PhotoFrame.NONE,
+    val photoCaption: String = "",
+    val captionPosition: CaptionPosition = CaptionPosition.BOTTOM,
+    val stickerEmoji: String = "",
+    val stickerPosition: StickerPosition = StickerPosition.NONE,
+    val isPrintPreviewEnabled: Boolean = false,
+    val isPhotoInverted: Boolean = false,
+    val ditherPreviewBitmap: Bitmap? = null,
     val brightness: Float = 0f,
     val contrast: Float = 1.0f,
     val ditherMode: DitherMode = DitherMode.FLOYD_STEINBERG,
@@ -454,14 +467,109 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
     fun setDitherMode(mode: DitherMode) {
         _uiState.value = _uiState.value.copy(ditherMode = mode)
         prefs.edit().putString(KEY_DITHER_MODE, mode.name).apply()
+        recomputeEditedBitmap()
     }
 
     fun setBrightness(brightness: Float) {
         _uiState.value = _uiState.value.copy(brightness = brightness)
+        recomputeEditedBitmap()
     }
 
     fun setContrast(contrast: Float) {
         _uiState.value = _uiState.value.copy(contrast = contrast)
+        recomputeEditedBitmap()
+    }
+
+    fun rotateImageClockwise() {
+        val next = (_uiState.value.imageRotation + 90) % 360
+        _uiState.value = _uiState.value.copy(imageRotation = next)
+        recomputeEditedBitmap()
+    }
+
+    fun toggleImageFlipHorizontal() {
+        _uiState.value = _uiState.value.copy(isImageFlippedHorizontal = !_uiState.value.isImageFlippedHorizontal)
+        recomputeEditedBitmap()
+    }
+
+    fun setCropAspect(aspect: CropAspect) {
+        _uiState.value = _uiState.value.copy(cropAspect = aspect)
+        recomputeEditedBitmap()
+    }
+
+    fun setPhotoFrame(frame: PhotoFrame) {
+        _uiState.value = _uiState.value.copy(photoFrame = frame)
+        recomputeEditedBitmap()
+    }
+
+    fun setPhotoCaption(caption: String) {
+        _uiState.value = _uiState.value.copy(photoCaption = caption)
+        recomputeEditedBitmap()
+    }
+
+    fun setCaptionPosition(position: CaptionPosition) {
+        _uiState.value = _uiState.value.copy(captionPosition = position)
+        recomputeEditedBitmap()
+    }
+
+    fun setSticker(emoji: String, position: StickerPosition = StickerPosition.BOTTOM_RIGHT) {
+        _uiState.value = _uiState.value.copy(stickerEmoji = emoji, stickerPosition = position)
+        recomputeEditedBitmap()
+    }
+
+    fun togglePrintPreview() {
+        _uiState.value = _uiState.value.copy(isPrintPreviewEnabled = !_uiState.value.isPrintPreviewEnabled)
+    }
+
+    fun togglePhotoInverted() {
+        _uiState.value = _uiState.value.copy(isPhotoInverted = !_uiState.value.isPhotoInverted)
+        recomputeEditedBitmap()
+    }
+
+    private var imageProcessingJob: kotlinx.coroutines.Job? = null
+
+    private fun recomputeEditedBitmap() {
+        val raw = _uiState.value.rawImageBitmap ?: return
+
+        imageProcessingJob?.cancel()
+        imageProcessingJob = viewModelScope.launch(Dispatchers.Default) {
+            val currentState = _uiState.value
+
+            val transformed = PhotoEditorHelper.transformBitmap(
+                source = raw,
+                rotationDegrees = currentState.imageRotation,
+                flipHorizontal = currentState.isImageFlippedHorizontal
+            )
+
+            val cropped = PhotoEditorHelper.cropToAspect(
+                source = transformed,
+                aspect = currentState.cropAspect
+            )
+
+            val composed = PhotoEditorHelper.applyFrameAndDecorations(
+                source = cropped,
+                frame = currentState.photoFrame,
+                captionText = currentState.photoCaption,
+                captionPos = currentState.captionPosition,
+                stickerEmoji = currentState.stickerEmoji,
+                stickerPos = currentState.stickerPosition
+            )
+
+            val ditherPreview = PhotoEditorHelper.createDitherPreview(
+                source = composed,
+                targetWidth = 384,
+                ditherMode = currentState.ditherMode,
+                brightness = currentState.brightness,
+                contrast = currentState.contrast,
+                invert = currentState.isPhotoInverted
+            )
+
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    selectedBitmap = composed,
+                    ditherPreviewBitmap = ditherPreview
+                )
+            }
+        }
     }
 
     fun setDensity(density: Int) {
@@ -491,7 +599,12 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun setSelectedImageUri(uri: Uri?) {
         if (uri == null) {
-            _uiState.value = _uiState.value.copy(selectedImageUri = null, selectedBitmap = null)
+            _uiState.value = _uiState.value.copy(
+                selectedImageUri = null,
+                rawImageBitmap = null,
+                selectedBitmap = null,
+                ditherPreviewBitmap = null
+            )
             return
         }
 
@@ -512,8 +625,16 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         selectedImageUri = uri,
-                        selectedBitmap = bitmap
+                        rawImageBitmap = bitmap,
+                        imageRotation = 0,
+                        isImageFlippedHorizontal = false,
+                        cropAspect = CropAspect.ORIGINAL,
+                        photoFrame = PhotoFrame.NONE,
+                        photoCaption = "",
+                        stickerEmoji = "",
+                        stickerPosition = StickerPosition.NONE
                     )
+                    recomputeEditedBitmap()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -613,7 +734,8 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
                 ditherMode = _uiState.value.ditherMode,
                 brightness = _uiState.value.brightness,
                 contrast = _uiState.value.contrast,
-                feedLines = _uiState.value.feedLines
+                feedLines = _uiState.value.feedLines,
+                invert = _uiState.value.isPhotoInverted
             )
 
             val res = printerManager.sendBytes(bytes)
