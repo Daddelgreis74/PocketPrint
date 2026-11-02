@@ -1772,7 +1772,7 @@ private fun SettingsTabContent(
                     ) {
                         Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Vorschub")
+                        Text("Vorschub (${uiState.feedLines}Z)")
                     }
 
                     FilledTonalButton(
@@ -1782,9 +1782,14 @@ private fun SettingsTabContent(
                     ) {
                         Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Reset")
+                        Text("Drucker-Reset")
                     }
                 }
+                Text(
+                    text = "Hinweis: 'Drucker-Reset' löscht abgebrochene Druckaufträge aus dem Speicher und stellt Standard-Textgrößen wieder her (kein Entkoppeln).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
             }
         }
 

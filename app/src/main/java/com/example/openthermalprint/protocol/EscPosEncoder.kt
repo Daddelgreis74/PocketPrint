@@ -56,11 +56,21 @@ object EscPosEncoder {
     }
 
     /**
-     * Line feed paper by N lines (ESC d n)
+     * Line feed paper by N lines.
+     * Uses a composite sequence: ESC d n (line feed command) followed by literal LF (0x0A) bytes.
+     * Many compact Bluetooth mini-printers (Cat/Denver/Goojprt) ignore pure ESC d n if their
+     * print buffer is empty, but reliably feed paper on standard LF (0x0A) or ESC J (dot feed).
      */
     fun feedPaper(lines: Int = 8): ByteArray {
-        val count = lines.coerceIn(1, 100).toByte()
-        return byteArrayOf(0x1B, 0x64, count)
+        val safeCount = lines.coerceIn(1, 50)
+        val stream = java.io.ByteArrayOutputStream()
+        // ESC d n: Print and feed n lines
+        stream.write(byteArrayOf(0x1B, 0x64, safeCount.toByte()))
+        // Explicit LF (0x0A) bytes ensure physical roller movement on all printer firmwares
+        repeat(safeCount) {
+            stream.write(0x0A)
+        }
+        return stream.toByteArray()
     }
 
     /**

@@ -648,16 +648,23 @@ class PrinterViewModel(application: Application) : AndroidViewModel(application)
 
     fun feedPaper(lines: Int = _uiState.value.feedLines) {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(statusMessage = "Papiervorschub ($lines Zeilen)...")
             val cmd = EscPosEncoder.feedPaper(lines)
-            printerManager.sendBytes(cmd)
+            val res = printerManager.sendBytes(cmd)
+            _uiState.value = _uiState.value.copy(
+                statusMessage = if (res.isSuccess) "Papiervorschub ausgeführt ($lines Zeilen)" else "Fehler beim Vorschub: ${res.exceptionOrNull()?.message}"
+            )
         }
     }
 
     fun initPrinter() {
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(statusMessage = "Setze Druckereinstellungen zurück...")
             val cmd = EscPosEncoder.CMD_INIT
-            printerManager.sendBytes(cmd)
-            _uiState.value = _uiState.value.copy(statusMessage = "Drucker initialisiert")
+            val res = printerManager.sendBytes(cmd)
+            _uiState.value = _uiState.value.copy(
+                statusMessage = if (res.isSuccess) "Drucker zurückgesetzt (Standardeinstellungen aktiv)" else "Fehler beim Reset: ${res.exceptionOrNull()?.message}"
+            )
         }
     }
 
